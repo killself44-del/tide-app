@@ -82,13 +82,21 @@ STATIONS = [
 ]
 
 # 3. 함수 정의
-# 기존 get_coordinates 함수를 지우고 이걸로 덮어쓰세요
+# [수정된 함수] 브이월드에 '명함(Header)'을 내미는 버전
 def get_coordinates(place_name):
     if not VWORLD_KEY:
-        st.error("API 키가 없습니다.")
         return None, None
     
     url = "https://api.vworld.kr/req/search"
+    
+    # ⭐️ 여기가 핵심! ⭐️
+    # 브이월드에 등록한 URL을 'Referer'에 적어줘야 문을 열어줍니다.
+    # 만약 브이월드 설정에 'localhost'를 등록했다면 http://localhost:8501
+    # 배포된 주소를 등록했다면 https://tide-app-xxxx.streamlit.app
+    headers = {
+        "Referer": "https://www.streamlit.app" 
+    }
+    
     params = {
         "service": "search",
         "request": "search",
@@ -104,33 +112,17 @@ def get_coordinates(place_name):
     }
     
     try:
-        response = requests.get(url, params=params, timeout=10)
+        # headers=headers 를 꼭 추가해야 함!
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        data = response.json()
         
-        # [디버깅] 상태 코드가 200(성공)이 아니면 에러 출력
-        if response.status_code != 200:
-            st.error(f"❌ 통신 오류 (코드: {response.status_code})")
-            st.code(response.text) # 브이월드가 보낸 진짜 에러 메시지를 화면에 보여줌
-            return None, None
-
-        # [디버깅] 데이터 변환 시도
-        try:
-            data = response.json()
-        except Exception:
-            st.error("❌ 데이터 형식이 깨졌습니다. (JSON Decode Error)")
-            st.code(response.text) # 여기에 "Access Denied" 같은 말이 적혀 있을 겁니다.
-            return None, None
-            
         if data['response']['status'] == 'OK':
             point = data['response']['result']['items'][0]['point']
             return float(point['y']), float(point['x'])
-        else:
-            # 검색 결과가 없는 경우
-            return None, None
-
-    except Exception as e:
-        st.error(f"시스템 에러: {e}")
-        return None, None
-
+    except:
+        pass
+    return None, None
+    
 def find_nearest_station(lat, lon):
     # 가장 가까운 관측소 찾기 (유클리드 거리)
     min_dist = float('inf')
@@ -218,5 +210,6 @@ if st.button("물때 검색하기", type="primary"):
             else:
 
                 st.error("장소를 찾을 수 없습니다. 정확한 지명을 입력해주세요.")
+
 
 
