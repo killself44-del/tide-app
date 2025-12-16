@@ -4,14 +4,11 @@ import math
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-from geopy.geocoders import Nominatim  # 📍 새로 추가된 무료 지도 도구
 
 # 1. 환경설정 및 키 로드
 st.set_page_config(page_title="전국 물때 알리미", page_icon="🌊")
-
 load_dotenv()
 
-# 안전한 키 로드 함수
 def get_secret(key_name):
     try:
         if key_name in st.secrets:
@@ -20,10 +17,11 @@ def get_secret(key_name):
         pass
     return os.getenv(key_name)
 
-# ⭐️ 브이월드 키는 이제 필요 없습니다! KHOA 키만 가져옵니다.
+# 🔑 키 가져오기
+KAKAO_KEY = get_secret("KAKAO_API_KEY")
 KHOA_KEY = get_secret("KHOA_API_KEY")
 
-# 2. 전국 조위관측소 데이터
+# 2. 전국 조위관측소 데이터 (사용자 제공)
 STATIONS = [
     {"code": "IE_0060", "name": "이어도", "lat": 32.12277778, "lon": 125.182222},
     {"code": "IE_0062", "name": "옹진소청초", "lat": 37.423056, "lon": 124.738056},
@@ -82,20 +80,29 @@ STATIONS = [
     {"code": "DT_0094", "name": "서거차도", "lat": 34.25142222, "lon": 125.91545}
 ]
 
-# 3. ⭐️ [핵심 변경] 좌표 찾기 함수 (Geopy 사용)
+# 3. ⭐️ [카카오맵 API 사용] 정확도 100%
 def get_coordinates(place_name):
+    if not KAKAO_KEY:
+        return None, None
+        
+    url = "https://dapi.kakao.com/v2/local/search/keyword.json"
+    headers = {"Authorization": f"KakaoAK {KAKAO_KEY}"}
+    params = {"query": place_name}
+    
     try:
-        # Nominatim은 무료 지도 서비스입니다.
-        geolocator = Nominatim(user_agent="my_tide_app_v1")
-        location = geolocator.geocode(place_name)
-        if location:
-            return location.latitude, location.longitude
+        response = requests.get(url, headers=headers, params=params, timeout=5)
+        data = response.json()
+        
+        if data.get('documents'):
+            # 첫 번째 검색 결과 가져오기
+            result = data['documents'][0]
+            return float(result['y']), float(result['x']) # Lat, Lon
+            
     except Exception as e:
-        # 에러 발생 시 조용히 넘어감
         pass
+        
     return None, None
 
-# 4. 가장 가까운 관측소 찾기
 def find_nearest_station(lat, lon):
     min_dist = float('inf')
     nearest = None
@@ -106,7 +113,6 @@ def find_nearest_station(lat, lon):
             nearest = station
     return nearest
 
-# 5. 물때 데이터 가져오기 (KHOA)
 def get_tide_data(station_code, date_str):
     if not KHOA_KEY:
         return None
@@ -126,17 +132,17 @@ def get_tide_data(station_code, date_str):
         pass
     return None
 
-# 6. 화면 구성
+# 4. 화면 구성
 st.title("🌊 전국 물때 알리미")
-st.markdown("여행 갈 **장소 이름**을 입력하세요. 가장 가까운 바다의 물때를 찾아드립니다.")
+st.markdown("여행 갈 **장소 이름**을 입력하세요. (예: 을왕리, 방아머리, 우리집)")
 
-if not KHOA_KEY:
-    st.error("🚨 해양조사원(KHOA) API 키가 없습니다. Secrets 설정을 확인해주세요.")
+if not KAKAO_KEY or not KHOA_KEY:
+    st.error("🚨 API 키가 설정되지 않았습니다. [Secrets]에 KAKAO_API_KEY와 KHOA_API_KEY를 넣어주세요.")
     st.stop()
 
 col1, col2 = st.columns([2, 1])
 with col1:
-    place = st.text_input("장소 입력", placeholder="예: 을왕리, 해운대, 변산반도")
+    place = st.text_input("장소 입력", placeholder="예: 방아머리 해수욕장, 을왕리, 속초")
 with col2:
     target_date = st.date_input("날짜 선택", datetime.now())
 
@@ -144,7 +150,7 @@ if st.button("물때 검색하기", type="primary"):
     if not place:
         st.warning("장소를 입력해주세요.")
     else:
-        with st.spinner(f"🔍 '{place}' 찾는 중..."):
+        with st.spinner(f"🔍 '{place}' 위치를 찾는 중..."):
             lat, lon = get_coordinates(place)
             
             if lat and lon:
@@ -152,7 +158,7 @@ if st.button("물때 검색하기", type="primary"):
                 tide_data = get_tide_data(station['code'], target_date.strftime("%Y%m%d"))
                 
                 st.divider()
-                st.success(f"📍 **{place}** 찾기 성공! (가까운 관측소: {station['name']})")
+                st.success(f"📍 **'{place}'** 위치 발견! (가까운 관측소: {station['name']})")
                 
                 if tide_data:
                     st.subheader(f"📅 {target_date.strftime('%Y년 %m월 %d일')} 물때표")
@@ -171,9 +177,8 @@ if st.button("물때 검색하기", type="primary"):
                         else:
                             st.info(f"🔵 **간조**\n\n⏰ {time_str}\n\n📉 {height}cm")
                             
-                    st.caption("자료제공: 국립해양조사원(KHOA)")
+                    st.caption("자료제공: 국립해양조사원 / 위치검색: Kakao Map")
                 else:
                     st.warning("해당 날짜의 조석 예보가 없습니다.")
             else:
-                st.error("장소를 찾을 수 없습니다. 지명을 더 정확하게 입력해보세요. (예: 을왕리 해수욕장 -> 을왕리)")
-
+                st.error("장소를 찾을 수 없습니다. (카카오맵에서도 못 찾는 곳입니다 😭)")
