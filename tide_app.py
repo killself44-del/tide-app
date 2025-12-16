@@ -81,8 +81,10 @@ STATIONS = [
 ]
 
 # 3. ⭐️ [카카오맵 API 사용] 정확도 100%
+# [디버깅용] 카카오가 보내는 에러를 화면에 토해내는 함수
 def get_coordinates(place_name):
     if not KAKAO_KEY:
+        st.error("❌ KAKAO_API_KEY가 없습니다. Secrets 설정을 확인하세요.")
         return None, None
         
     url = "https://dapi.kakao.com/v2/local/search/keyword.json"
@@ -91,14 +93,23 @@ def get_coordinates(place_name):
     
     try:
         response = requests.get(url, headers=headers, params=params, timeout=5)
+        
+        # 🚨 [추가된 부분] 상태 코드가 200(성공)이 아니면 에러 내용을 보여줌
+        if response.status_code != 200:
+            st.error(f"❌ 카카오 에러 (코드: {response.status_code})")
+            st.json(response.json()) # 에러 상세 내용 출력 (여기서 원인이 나옴)
+            return None, None
+            
         data = response.json()
         
         if data.get('documents'):
-            # 첫 번째 검색 결과 가져오기
             result = data['documents'][0]
-            return float(result['y']), float(result['x']) # Lat, Lon
+            return float(result['y']), float(result['x'])
+        else:
+            st.warning(f"🤔 카카오맵 검색 결과가 0건입니다. (검색어: {place_name})")
             
     except Exception as e:
+        st.error(f"시스템 에러: {e}")
         pass
         
     return None, None
@@ -182,3 +193,4 @@ if st.button("물때 검색하기", type="primary"):
                     st.warning("해당 날짜의 조석 예보가 없습니다.")
             else:
                 st.error("장소를 찾을 수 없습니다. (카카오맵에서도 못 찾는 곳입니다 😭)")
+
