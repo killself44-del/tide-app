@@ -82,9 +82,10 @@ STATIONS = [
 ]
 
 # 3. 함수 정의
-# 기존 get_coordinates 함수를 이걸로 교체하세요.
+# 기존 get_coordinates 함수를 지우고 이걸로 덮어쓰세요
 def get_coordinates(place_name):
     if not VWORLD_KEY:
+        st.error("API 키가 없습니다.")
         return None, None
     
     url = "https://api.vworld.kr/req/search"
@@ -101,22 +102,34 @@ def get_coordinates(place_name):
         "errorformat": "json",
         "key": VWORLD_KEY
     }
+    
     try:
-        response = requests.get(url, params=params, timeout=5)
-        data = response.json()
+        response = requests.get(url, params=params, timeout=10)
         
-        # [디버깅 코드 추가] 상태가 OK가 아니면 에러 내용을 화면에 보여줌
-        if data['response']['status'] != 'OK':
-            st.error(f"❌ 브이월드 에러: {data['response']}")
+        # [디버깅] 상태 코드가 200(성공)이 아니면 에러 출력
+        if response.status_code != 200:
+            st.error(f"❌ 통신 오류 (코드: {response.status_code})")
+            st.code(response.text) # 브이월드가 보낸 진짜 에러 메시지를 화면에 보여줌
             return None, None
 
+        # [디버깅] 데이터 변환 시도
+        try:
+            data = response.json()
+        except Exception:
+            st.error("❌ 데이터 형식이 깨졌습니다. (JSON Decode Error)")
+            st.code(response.text) # 여기에 "Access Denied" 같은 말이 적혀 있을 겁니다.
+            return None, None
+            
         if data['response']['status'] == 'OK':
             point = data['response']['result']['items'][0]['point']
             return float(point['y']), float(point['x'])
+        else:
+            # 검색 결과가 없는 경우
+            return None, None
+
     except Exception as e:
-        st.error(f"통신 에러: {e}")
-        pass
-    return None, None
+        st.error(f"시스템 에러: {e}")
+        return None, None
 
 def find_nearest_station(lat, lon):
     # 가장 가까운 관측소 찾기 (유클리드 거리)
@@ -205,4 +218,5 @@ if st.button("물때 검색하기", type="primary"):
             else:
 
                 st.error("장소를 찾을 수 없습니다. 정확한 지명을 입력해주세요.")
+
 
