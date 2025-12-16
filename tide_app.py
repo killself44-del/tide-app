@@ -82,8 +82,8 @@ STATIONS = [
 ]
 
 # 3. 함수 정의
+# 기존 get_coordinates 함수를 이걸로 교체하세요.
 def get_coordinates(place_name):
-    # V-World API를 통해 주소를 위경도로 변환
     if not VWORLD_KEY:
         return None, None
     
@@ -104,10 +104,17 @@ def get_coordinates(place_name):
     try:
         response = requests.get(url, params=params, timeout=5)
         data = response.json()
+        
+        # [디버깅 코드 추가] 상태가 OK가 아니면 에러 내용을 화면에 보여줌
+        if data['response']['status'] != 'OK':
+            st.error(f"❌ 브이월드 에러: {data['response']}")
+            return None, None
+
         if data['response']['status'] == 'OK':
             point = data['response']['result']['items'][0]['point']
             return float(point['y']), float(point['x'])
-    except:
+    except Exception as e:
+        st.error(f"통신 에러: {e}")
         pass
     return None, None
 
@@ -198,3 +205,4 @@ if st.button("물때 검색하기", type="primary"):
             else:
 
                 st.error("장소를 찾을 수 없습니다. 정확한 지명을 입력해주세요.")
+
