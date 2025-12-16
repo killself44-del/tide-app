@@ -4,13 +4,14 @@ import math
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from geopy.geocoders import Nominatim  # 📍 새로 추가된 무료 지도 도구
 
-# 1. 환경설정 및 API 키 로드
+# 1. 환경설정 및 키 로드
 st.set_page_config(page_title="전국 물때 알리미", page_icon="🌊")
 
-# 로컬(.env)과 클라우드(Secrets) 모두 지원하는 안전한 키 로드 방식
 load_dotenv()
 
+# 안전한 키 로드 함수
 def get_secret(key_name):
     try:
         if key_name in st.secrets:
@@ -19,10 +20,10 @@ def get_secret(key_name):
         pass
     return os.getenv(key_name)
 
-VWORLD_KEY = get_secret("VWORLD_API_KEY")
+# ⭐️ 브이월드 키는 이제 필요 없습니다! KHOA 키만 가져옵니다.
 KHOA_KEY = get_secret("KHOA_API_KEY")
 
-# 2. 전국 조위관측소 데이터 (사용자 제공 데이터 통합)
+# 2. 전국 조위관측소 데이터
 STATIONS = [
     {"code": "IE_0060", "name": "이어도", "lat": 32.12277778, "lon": 125.182222},
     {"code": "IE_0062", "name": "옹진소청초", "lat": 37.423056, "lon": 124.738056},
@@ -74,57 +75,28 @@ STATIONS = [
     {"code": "DT_0063", "name": "가덕도", "lat": 35.024178, "lon": 128.810933},
     {"code": "DT_0065", "name": "덕적도", "lat": 37.226333, "lon": 126.156556},
     {"code": "DT_0066", "name": "향화도", "lat": 35.167667, "lon": 126.359556},
-    {"code": "DT_0067", "name": "안흥", "lat": 36.67463889, "lon": 126.1295556},
+    {"code": "DT_0067", "name: "안흥", "lat": 36.67463889, "lon": 126.1295556},
     {"code": "DT_0091", "name": "포항", "lat": 36.047128, "lon": 129.383806},
     {"code": "DT_0092", "name": "여호항", "lat": 34.661944, "lon": 127.469167},
     {"code": "DT_0093", "name": "소무의도", "lat": 37.373069, "lon": 126.440066},
     {"code": "DT_0094", "name": "서거차도", "lat": 34.25142222, "lon": 125.91545}
 ]
 
-# 3. 함수 정의
-# [수정된 함수] 브이월드에 '명함(Header)'을 내미는 버전
+# 3. ⭐️ [핵심 변경] 좌표 찾기 함수 (Geopy 사용)
 def get_coordinates(place_name):
-    if not VWORLD_KEY:
-        return None, None
-    
-    url = "https://api.vworld.kr/req/search"
-    
-    # ⭐️ 여기가 핵심! ⭐️
-    # 브이월드에 등록한 URL을 'Referer'에 적어줘야 문을 열어줍니다.
-    # 만약 브이월드 설정에 'localhost'를 등록했다면 http://localhost:8501
-    # 배포된 주소를 등록했다면 https://tide-app-xxxx.streamlit.app
-    headers = {
-        "Referer": "https://www.streamlit.app" 
-    }
-    
-    params = {
-        "service": "search",
-        "request": "search",
-        "version": "2.0",
-        "crs": "EPSG:4326",
-        "size": "1",
-        "page": "1",
-        "query": place_name,
-        "type": "place",
-        "format": "json",
-        "errorformat": "json",
-        "key": VWORLD_KEY
-    }
-    
     try:
-        # headers=headers 를 꼭 추가해야 함!
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        data = response.json()
-        
-        if data['response']['status'] == 'OK':
-            point = data['response']['result']['items'][0]['point']
-            return float(point['y']), float(point['x'])
-    except:
+        # Nominatim은 무료 지도 서비스입니다.
+        geolocator = Nominatim(user_agent="my_tide_app_v1")
+        location = geolocator.geocode(place_name)
+        if location:
+            return location.latitude, location.longitude
+    except Exception as e:
+        # 에러 발생 시 조용히 넘어감
         pass
     return None, None
-    
+
+# 4. 가장 가까운 관측소 찾기
 def find_nearest_station(lat, lon):
-    # 가장 가까운 관측소 찾기 (유클리드 거리)
     min_dist = float('inf')
     nearest = None
     for station in STATIONS:
@@ -134,11 +106,10 @@ def find_nearest_station(lat, lon):
             nearest = station
     return nearest
 
+# 5. 물때 데이터 가져오기 (KHOA)
 def get_tide_data(station_code, date_str):
-    # KHOA API로 조석 정보 조회
     if not KHOA_KEY:
         return None
-        
     url = "https://www.khoa.go.kr/api/oceangrid/tideObsPreTab/search.do"
     params = {
         "ServiceKey": KHOA_KEY,
@@ -155,18 +126,17 @@ def get_tide_data(station_code, date_str):
         pass
     return None
 
-# 4. 화면 구성
+# 6. 화면 구성
 st.title("🌊 전국 물때 알리미")
-st.markdown("여행 갈 **장소(해수욕장, 항구 등)**를 입력하세요. 가장 가까운 바다의 물때를 찾아드립니다.")
+st.markdown("여행 갈 **장소 이름**을 입력하세요. 가장 가까운 바다의 물때를 찾아드립니다.")
 
-# API 키 확인
-if not VWORLD_KEY or not KHOA_KEY:
-    st.error("🚨 API 키가 설정되지 않았습니다. 배포 후 Secrets 설정을 확인해주세요.")
+if not KHOA_KEY:
+    st.error("🚨 해양조사원(KHOA) API 키가 없습니다. Secrets 설정을 확인해주세요.")
     st.stop()
 
 col1, col2 = st.columns([2, 1])
 with col1:
-    place = st.text_input("장소 입력", placeholder="예: 을왕리, 속초, 대천해수욕장")
+    place = st.text_input("장소 입력", placeholder="예: 을왕리, 해운대, 변산반도")
 with col2:
     target_date = st.date_input("날짜 선택", datetime.now())
 
@@ -174,7 +144,7 @@ if st.button("물때 검색하기", type="primary"):
     if not place:
         st.warning("장소를 입력해주세요.")
     else:
-        with st.spinner(f"🔍 '{place}' 근처 바다를 찾는 중..."):
+        with st.spinner(f"🔍 '{place}' 찾는 중..."):
             lat, lon = get_coordinates(place)
             
             if lat and lon:
@@ -182,34 +152,27 @@ if st.button("물때 검색하기", type="primary"):
                 tide_data = get_tide_data(station['code'], target_date.strftime("%Y%m%d"))
                 
                 st.divider()
-                st.success(f"📍 **{place}**에서 가장 가까운 관측소: **{station['name']}**")
+                st.success(f"📍 **{place}** 찾기 성공! (가까운 관측소: {station['name']})")
                 
                 if tide_data:
                     st.subheader(f"📅 {target_date.strftime('%Y년 %m월 %d일')} 물때표")
                     
-                    # 카드 형태로 예쁘게 출력
                     cols = st.columns(len(tide_data))
                     for idx, item in enumerate(tide_data):
                         time_str = item['tph_time'][11:16]
                         height = item['tph_level']
-                        tide_type = item['hl_code'] # 고조/저조
+                        tide_type = item['hl_code']
                         
-                        # 화면 너비에 따라 줄바꿈 처리 (4개씩 끊기)
                         if idx % 4 == 0 and idx != 0:
-                            st.write("") # 줄바꿈
+                            st.write("")
                             
-                        # 색상 구분
                         if tide_type == "고조":
-                            st.error(f"🔴 **만조 (물 가득)**\n\n⏰ {time_str}\n\n🌊 {height}cm")
+                            st.error(f"🔴 **만조**\n\n⏰ {time_str}\n\n🌊 {height}cm")
                         else:
-                            st.info(f"🔵 **간조 (물 빠짐)**\n\n⏰ {time_str}\n\n📉 {height}cm")
-                    
-                    st.caption("자료제공: 국립해양조사원(KHOA) / 브이월드(V-World)")
+                            st.info(f"🔵 **간조**\n\n⏰ {time_str}\n\n📉 {height}cm")
+                            
+                    st.caption("자료제공: 국립해양조사원(KHOA)")
                 else:
-                    st.warning("해당 날짜의 조석 예보 데이터가 없습니다.")
+                    st.warning("해당 날짜의 조석 예보가 없습니다.")
             else:
-
-                st.error("장소를 찾을 수 없습니다. 정확한 지명을 입력해주세요.")
-
-
-
+                st.error("장소를 찾을 수 없습니다. 지명을 더 정확하게 입력해보세요. (예: 을왕리 해수욕장 -> 을왕리)")
